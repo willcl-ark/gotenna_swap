@@ -1,0 +1,3 @@
+lnd_grpc==0.3.3
+-e git://github.com/willcl-ark/blockstream_blocksat.git#egg=blocksat_api
+-e git://github.com/willcl-ark/submarine_swaps.git#egg=submarine_api

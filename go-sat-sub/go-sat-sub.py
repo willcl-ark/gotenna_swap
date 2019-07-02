@@ -3,14 +3,14 @@ from time import sleep
 
 import lnd_grpc
 from blocksat_api import blocksat
-from submarine_api import submarine_api
+from submarine_api import submarine
 
 NETWORK = 'testnet'
 
 # setup lnd testnet client
 lnd = lnd_grpc.Client(network=NETWORK)
 
-# create message to be sent
+# create random 64 byte message to be sent
 message = token_hex(64)
 
 # setup the satellite Order
@@ -37,7 +37,7 @@ assert channel_balance > ((bid_msat / 1000) * 1.02)
 refund_addr = lnd.new_address('p2wkh').address
 
 # setup swap object
-swap = submarine_api.Swap(network=NETWORK, invoice=invoice['payreq'], refund=refund_addr)
+swap = submarine.Swap(network=NETWORK, invoice=invoice['payreq'], refund=refund_addr)
 
 # create the swap request
 swap.create()
