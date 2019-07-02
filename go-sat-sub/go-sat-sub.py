@@ -1,7 +1,10 @@
+import json
+
 from secrets import token_hex
 from time import sleep
 
 import lnd_grpc
+
 from blocksat_api import blocksat
 from submarine_api import submarine
 
@@ -38,6 +41,11 @@ refund_addr = lnd.new_address('p2wkh').address
 
 # setup swap object
 swap = submarine.Swap(network=NETWORK, invoice=invoice['payreq'], refund=refund_addr)
+
+# check the invoice is payable by the swap service
+invoice_details = submarine.get_invoice_details(network=NETWORK, invoice=invoice['payreq'])
+assert invoice_details.status_code == 200
+invoice_details_json = json.loads(invoice_details.text)
 
 # create the swap request
 swap.create()
