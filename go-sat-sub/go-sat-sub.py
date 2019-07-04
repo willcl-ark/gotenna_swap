@@ -3,23 +3,21 @@ import json
 from secrets import token_hex
 from time import sleep
 
-import lnd_grpc
+import bitcoin.rpc
 
 from blocksat_api import blocksat
 from submarine_api import submarine
 
 NETWORK = 'testnet'
-
-# setup lnd testnet client
-lnd = lnd_grpc.Client(network=NETWORK)
+SATOSHIS = 100_000_000
 
 # create random 64 byte message to be sent
-message = token_hex(64)
+message = token_hex(256)
 
 # setup the satellite Order
 sat = blocksat.Order(message=message, network=NETWORK)
 # note bid is in milli-satoshis
-bid_msat = sat.size * 50
+bid_msat = (sat.size * 50) * 2
 sat.place(bid=bid_msat)
 if sat.api_status_code == 200:
     pass
@@ -30,20 +28,16 @@ else:
         sleep(2)
 invoice = sat.place_response['lightning_invoice']
 
-# check we have available off-chain funds to send
-# not strictly really as submarine will pay our invoice for us
-channel_balance = lnd.channel_balance().balance
-# account for 1% channel reserve with extra 2%
-assert channel_balance > ((bid_msat / 1000) * 1.02)
-
-# change refund address for mainnet -- need access to privkey for refunds!!
-refund_addr = lnd.new_address('p2wkh').address
+# setup bitcoin core proxy
+proxy = bitcoin.rpc.RawProxy(btc_conf_file="/Users/will/Library/Application Support/Bitcoin/testnet3/bitcoin.conf")
+refund_addr = proxy.getnewaddress("", "legacy")
 
 # setup swap object
-swap = submarine.Swap(network=NETWORK, invoice=invoice['payreq'], refund=refund_addr)
+swap = submarine.Swap(network=NETWORK, invoice=invoice['payreq'],refund=refund_addr)
 
 # check the invoice is payable by the swap service
 invoice_details = submarine.get_invoice_details(network=NETWORK, invoice=invoice['payreq'])
+# successful return implies that a possible route was found
 assert invoice_details.status_code == 200
 invoice_details_json = json.loads(invoice_details.text)
 
@@ -58,32 +52,34 @@ else:
 
 # execute the swap payment
 # check we have enough on-chain balance to pay the swap
-assert lnd.wallet_balance().confirmed_balance > swap.swap_amount
-on_chain_receipt = lnd.send_coins(addr=swap.swap_p2sh_address,
-                                  amount=swap.swap_amount,
-                                  target_conf=1)
+on_chain_receipt = proxy.sendtoaddress(swap.swap_p2sh_address, (swap.swap_amount / SATOSHIS))
+swap.tx_id = on_chain_receipt
 
 # check the on-chain payment
-if on_chain_receipt.txid:
-    pass
+if on_chain_receipt:
+    print(f"On-chain swap payment complete, txid: {on_chain_receipt}")
 else:
-    print("On-chain payment using LND failed")
+    print("On-chain swap payment using bitcoind failed")
 
-print(f"Waiting for a confirmation for transaction {on_chain_receipt.txid}")
-# setup thread to monitor for on-chain tx confirmation for the swap tx
-for transaction in lnd.subscribe_transactions():
-    # tx_queue.put(transaction)
-    print(transaction)
-    # if the transaction matches, break the thread
-    if transaction.tx_hash == on_chain_receipt.txid:
-        print(f"Txid {on_chain_receipt.txid} has 1 confirmation on the blockchain")
-        break
+swap.check_status()
+print(f"Waiting for 1 confirmation for txid: {on_chain_receipt}...")
+
+# get tx confirmations from bitcoind
+tx_status = proxy.gettransaction(f'{on_chain_receipt}')
+# check we've done things right
+assert tx_status['details'][0]['address'] == swap.swap_p2sh_address
+assert int(tx_status['details'][0]['amount'] * -1 * SATOSHIS)
+
+while proxy.gettransaction(f'{on_chain_receipt}')['confirmations'] < 1:
+    sleep(10)
+print(f"Got 1 confirmation for on-chain payment txid: {on_chain_receipt}")
+
 
 # check the status of the swap
 swap.check_status()
 print("Waiting for swap approval...")
 elapsed = 0
-while lnd.get_transactions().transactions[-1].num_confirmations <= 2:
+while proxy.gettransaction(f'{on_chain_receipt}')['confirmations'] <= 2:
     if not swap.swap_status.status_code == 200:
         sleep(30)
         elapsed += 30
