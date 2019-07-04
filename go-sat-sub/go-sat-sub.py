@@ -63,7 +63,7 @@ else:
 
 swap.check_status()
 swap_status = json.loads(swap.swap_status.text)
-if swap_status['payment_secret']:
+if 'payment_secret' in swap_status:
     print(f"Swap complete!\n"
           f"Swap secret: {swap_status['payment_secret']}\n"
           f"txid: {swap_status['transaction_id']}")
