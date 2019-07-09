@@ -2,6 +2,7 @@ import json
 from secrets import token_hex
 from time import sleep
 
+# import bitcoin
 import bitcoin.rpc
 from blocksat_api import blocksat
 from submarine_api import submarine
@@ -9,8 +10,10 @@ from submarine_api import submarine
 NETWORK = 'testnet'
 SATOSHIS = 100_000_000
 
-# create random 64 byte message to be sent
-message = token_hex(256)
+bitcoin.SelectParams('testnet')
+
+# create random 1024 byte message to be sent
+message = token_hex(64)
 
 # setup the satellite Order
 sat = blocksat.Order(message=message, network=NETWORK)
@@ -44,15 +47,16 @@ invoice_details_json = json.loads(invoice_details.text)
 # create the swap request
 swap.create()
 
-# check swap was accepted
+# check swap request was accepted
 if swap.swap.status_code == 200:
     pass
 else:
     print(swap.swap.status_code, swap.swap.text, swap.swap.reason)
 
 # execute the swap payment
-# check we have enough on-chain balance to pay the swap
-on_chain_receipt = proxy.sendtoaddress(swap.swap_p2sh_address, (swap.swap_amount / SATOSHIS))
+swap.swap_amount_bitcoin = swap.swap_amount / SATOSHIS
+print(f"Paying {swap.swap_amount_bitcoin} BTC to fulfil the swap...")
+on_chain_receipt = proxy.sendtoaddress(swap.swap_p2sh_address, swap.swap_amount_bitcoin)
 swap.tx_id = on_chain_receipt
 
 # check the on-chain payment
@@ -61,33 +65,41 @@ if on_chain_receipt:
 else:
     print("On-chain swap payment using bitcoind failed")
 
+# let the unconfirmed tx propagate
+sleep(10)
+
 swap.check_status()
+retries = 0
+while swap.swap_status.status_code != 200 and retries < 6:
+    swap.check_status()
+    sleep(5)
+assert swap.swap_status.status_code == 200
 swap_status = json.loads(swap.swap_status.text)
 if 'payment_secret' in swap_status:
     print(f"Swap complete!\n"
           f"Swap secret: {swap_status['payment_secret']}\n"
           f"txid: {swap_status['transaction_id']}")
 else:
-    print(f"Waiting for 1 confirmation for txid: {on_chain_receipt}...")
-
-    # get tx confirmations from bitcoind
-    tx_status = proxy.gettransaction(f'{on_chain_receipt}')
-    # check we've done things right
-    assert tx_status['details'][0]['address'] == swap.swap_p2sh_address
-    assert int(tx_status['details'][0]['amount'] * -1 * SATOSHIS)
-
-    while proxy.gettransaction(f'{on_chain_receipt}')['confirmations'] < 1:
-        sleep(10)
-    print(f"Got 1 confirmation for on-chain payment txid: {on_chain_receipt}")
+    # print(f"Waiting for 1 confirmation for txid: {on_chain_receipt}...")
+    #
+    # # get tx confirmations from bitcoind
+    # tx_status = proxy.gettransaction(f'{on_chain_receipt}')
+    # # check we've done things right
+    # assert tx_status['details'][0]['address'] == swap.swap_p2sh_address
+    # assert int(tx_status['details'][0]['amount'] * -1 * SATOSHIS)
+    #
+    # while proxy.gettransaction(f'{on_chain_receipt}')['confirmations'] < 1:
+    #     sleep(10)
+    # print(f"Got 1 confirmation for on-chain payment txid: {on_chain_receipt}")
 
     # check the status of the swap
     swap.check_status()
     print("Waiting for swap approval...")
     elapsed = 0
-    while proxy.gettransaction(f'{on_chain_receipt}')['confirmations'] <= 2:
+    while (proxy.gettransaction(f'{on_chain_receipt}')['confirmations'] <= 2) and (elapsed < 65):
         if not swap.swap_status.status_code == 200:
-            sleep(30)
-            elapsed += 30
+            sleep(5)
+            elapsed += 5
             print(f"{elapsed}s")
             swap.check_status()
             print(f"Swap status: {swap.swap_status.text}")
