@@ -1,0 +1,16 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+
+[packages]
+lnd-grpc = "==0.3.3"
+blocksat-api = {editable = true,git = "git://github.com/willcl-ark/blockstream_blocksat.git"}
+submarine-api = {editable = true,git = "git://github.com/willcl-ark/submarine_swaps.git"}
+requests = "*"
+python-bitcoinrpc = "*"
+
+[requires]
+python_version = "3.7"
