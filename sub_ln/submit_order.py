@@ -1,3 +1,4 @@
+import argparse
 import json
 import logging
 from secrets import token_hex
@@ -55,7 +56,7 @@ def check_refund_addr(address):
 
 class Order:
 
-    def __init__(self, message, network=NETWORK, start_bid_rate=50, max_bid_rate=100):
+    def __init__(self, message, network=NETWORK, start_bid_rate=50, max_bid_rate=100, invoice=None):
         self.message = message
         self.btc = create_btc_rpc()
         self.network = network
@@ -67,6 +68,8 @@ class Order:
         self.swap = None
         self.on_chain_receipt = None
         self.logger = logging.getLogger('order')
+        if invoice:
+            self.invoice = invoice
 
     def setup_sat_order(self):
         self.blocksat_order = blocksat.Order(message=self.message, network=self.network)
@@ -93,8 +96,12 @@ class Order:
         self.extract_invoice()
 
     def extract_invoice(self):
-        invoice = self.blocksat_order.place_response['lightning_invoice']
-        self.logger.debug(f"Extracted invoice from successful blocksat bid")
+        # debug/remove if/else
+        if self.invoice:
+            pass
+        else:
+            invoice = self.blocksat_order.place_response['lightning_invoice']
+            self.logger.debug(f"Extracted invoice from successful blocksat bid")
         check_invoice_details(invoice=invoice, network=self.network)
         self.invoice = invoice
 
@@ -107,9 +114,15 @@ class Order:
     def setup_swap(self):
         self.get_refund_address()
         self.logger.debug(f"Setting up swap request")
-        self.swap = submarine.Swap(network=self.network,
-                                   invoice=self.invoice['payreq'],
-                                   refund=self.refund_address)
+        # debug/remove if/else
+        if self.invoice:
+            self.swap = submarine.Swap(network=self.network,
+                                       invoice=self.invoice,
+                                       refund=self.refund_address)
+        else:
+            self.swap = submarine.Swap(network=self.network,
+                                       invoice=self.invoice['payreq'],
+                                       refund=self.refund_address)
 
     def create_swap(self):
         self.logger.debug("Creating the swap with the swap server")
@@ -134,8 +147,10 @@ class Order:
             self.logger.debug(f"On-chain swap payment complete, txid: {self.on_chain_receipt}")
         else:
             self.logger.debug("On-chain swap payment using bitcoind failed")
+        self.check_swap()
 
     def check_swap(self):
+        sleep(5)
         self.swap.check_status()
         tries = 0
         self.logger.debug("Waiting for swap approval")
@@ -144,24 +159,22 @@ class Order:
             self.swap.check_status()
             sleep(10)
             tries += 1
-        self.logger.debug("Swap approved\nWaiting for swap server to perform off-chain payment")
-        self.wait_for_confirmation(self.on_chain_receipt)
-        tries = 0
-        while 'payment_secret' not in json.loads(self.swap.swap_status.text) and tries < 6:
-            self.swap.check_status()
-            self.logger.debug(json.loads(self.swap.swap_status.text))
-            sleep(10)
-            tries += 1
-        if 'payment_secret' in json.loads(self.swap.swap_status.text):
-            self.logger.info(f"Swap complete!\n"
-                         f"{json.loads(self.swap.swap_status.text)}")
-            return True
+        self.logger.debug("Swap approved for payment\n"
+                          "Waiting for swap server to perform off-chain payment")
+        if self.wait_for_preimage():
+            return
         else:
-            self.logger.debug("Swap not completed within 600 seconds of 1 confirmation")
-            return False
+            self.wait_for_confirmation(txid=self.on_chain_receipt)
+            if self.wait_for_preimage():
+                return 1
+            else:
+                return 0
+
+
+
 
     def wait_for_confirmation(self, txid, interval=30):
-        self.logger.debug(f"Swap waiting for transaction {txid} to achieve 1 confirmation")
+        self.logger.debug(f"Swap waiting for transaction {txid} to achieve 1 on-chain confirmation")
         start = time()
         while self.btc.gettransaction(txid)['confirmations'] < 1:
             sleep(interval)
@@ -175,14 +188,36 @@ class Order:
         else:
             return False
 
+    def wait_for_preimage(self, timeout=60):
+        self.swap.check_status()
+        start_time = time()
+        while 'payment_secret' not in json.loads(self.swap.swap_status.text)\
+                and time() < start_time + timeout:
+            sleep(10)
+            self.swap.check_status()
+            self.logger.debug(json.loads(self.swap.swap_status.text))
+        if 'payment_secret' in json.loads(self.swap.swap_status.text):
+            self.logger.info(f"Swap complete!\n"
+                         f"{json.loads(self.swap.swap_status.text)}")
+            return True
+        else:
+            self.logger.debug("Swap not completed within 600 seconds of 1 confirmation "
+                              "Waiting for 1 on-chain confirmation")
+            self.wait_for_confirmation(self.on_chain_receipt)
+            return False
+
 
 if __name__ == "__main__":
-    order = Order(create_random_message())
-    order.setup_sat_order()
-    order.bid_order()
+    parser = argparse.ArgumentParser(description='Manually add an invoice to pay')
+    parser.add_argument('invoice', help='BOLT11 payment request', type=str)
+    args = parser.parse_args()
+    if args.invoice:
+        order = Order(create_random_message(), invoice=args.invoice)
+    else:
+        order = Order(create_random_message())
+        order.setup_sat_order()
+        order.bid_order()
     order.setup_swap()
     order.create_swap()
     order.execute_swap()
-    # let the on-chain payment propagate
-    sleep(10)
     order.check_swap()
