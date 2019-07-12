@@ -39,8 +39,9 @@ def check_invoice_details(invoice, network=NETWORK):
         logger.debug(f"Payment Request {invoice['payreq']} successfully decoded by the swap "
                      f"server")
     except AssertionError as e:
-        logger.error(f"Check Invoice details raised error: {e}")
-        raise (e, invoice_details.text)
+        logger.error(f"Check Invoice details raised error: {invoice_details.text}")
+        logger.error(f"Invoice details:\n{invoice_details}")
+        raise e
 
 
 def check_refund_addr(address):
@@ -200,17 +201,37 @@ class Order:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Perform a submarine swap for a blockstream '
-                                                 'blocksat invoice or optionally-provided invoice')
-    parser.add_argument("--invoice", help='BOLT11 payment request', type=str)
-    args = parser.parse_args()
-    if args.invoice:
-        order = Order(create_random_message(), invoice=args.invoice)
-        BLOCKSAT = 0
-    else:
-        order = Order(message=create_random_message())
-        order.setup_sat_order()
-        order.bid_order()
-    order.setup_swap()
-    order.create_swap()
-    order.execute_swap()
+
+    def main():
+        global BLOCKSAT
+        parser = argparse.ArgumentParser(description='Perform a submarine swap for a blockstream '
+                                                     'blocksat invoice or optionally-provided'
+                                                     'invoice')
+        parser.add_argument("--invoice",
+                            help="Optional BOLT11 payment request to supply for testing. "
+                                 "Can't be used with --message", type=str)
+        parser.add_argument("--message", help="Optional message to send via the satellite. Can't be"
+                                              "used with --invoice", type=str)
+        args = parser.parse_args()
+        if args.invoice and args.message:
+            logger.error("Cannot specify invoice and message together because supplying your own "
+                         "message requires a quote from Blockstream API who will return their own "
+                         "invoice")
+            return
+        elif args.invoice:
+            order = Order(message=create_random_message(), invoice=args.invoice)
+            BLOCKSAT = 0
+        elif args.message:
+            order = Order(message=args.message)
+            order.setup_sat_order()
+            order.bid_order()
+        else:
+            order = Order(message=create_random_message())
+            order.setup_sat_order()
+            order.bid_order()
+        order.setup_swap()
+        order.create_swap()
+        order.execute_swap()
+
+
+    main()
