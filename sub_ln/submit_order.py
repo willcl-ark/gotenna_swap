@@ -16,9 +16,10 @@ RPC_HOST = "127.0.0.1"
 RPC_PORT = "18332"
 RPC_USER = "user"
 RPC_PASSWORD = "password"
-logging.basicConfig(level=logging.DEBUG,
-                    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+
 logger = logging.getLogger('general')
+FORMAT = "[%(asctime)s - %(levelname)8s - %(funcName)20s() ] - %(message)s"
+logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 
 
 def create_btc_rpc():
@@ -34,14 +35,17 @@ def create_random_message():
 
 def check_invoice_details(invoice, network=NETWORK):
     invoice_details = submarine.get_invoice_details(network=NETWORK, invoice=invoice['payreq'])
-    try:
-        assert invoice_details.status_code == 200
+    tries = 0
+    while invoice_details.status_code != 200 and tries < 10:
+        sleep(5)
+        invoice_details = submarine.get_invoice_details(network=NETWORK, invoice=invoice['payreq'])
+    if invoice_details.status_code == 200:
         logger.debug(f"Payment Request {invoice['payreq']} successfully decoded by the swap "
                      f"server")
-    except AssertionError as e:
-        logger.error(f"Check Invoice details raised error: {invoice_details.text}")
-        logger.error(f"Invoice details:\n{invoice_details}")
-        raise e
+        return True
+    else:
+        logger.error(f"Raised error: {invoice_details.text} with invoice\n{invoice_details}")
+        return False
 
 
 def check_refund_addr(address):
@@ -71,7 +75,7 @@ class Order:
         self.blocksat_order = blocksat.Order(message=self.message, network=self.network)
         self.logger.info(f"Blocksat order created")
 
-    def bid_order(self):
+    def bid_sat_order(self):
         # bid rate is milli-satoshis/byte
         bid_rate = self.start_bid_rate
         msg_bid = max(self.blocksat_order.size * bid_rate, 10000)
@@ -95,12 +99,11 @@ class Order:
     def extract_invoice(self):
         # debug/remove if/else
         if 'payreq' in self.invoice:
-            check_invoice_details(invoice=self.invoice, network=self.network)
-            pass
+            assert check_invoice_details(invoice=self.invoice, network=self.network)
         else:
             invoice = self.blocksat_order.place_response['lightning_invoice']
             self.logger.debug(f"Extracted invoice from successful blocksat bid")
-            check_invoice_details(invoice=invoice, network=self.network)
+            assert check_invoice_details(invoice=invoice, network=self.network)
             self.invoice = invoice
 
     def get_refund_address(self, type='legacy'):
@@ -199,14 +202,25 @@ class Order:
             # TODO: Swap needs to check for payment_secret again here after waiting then return
             return False
 
+    def execute_order(self):
+        if 'payreq' not in self.invoice:
+            logger.debug(f"invoice not found, setting up sat order")
+            self.setup_sat_order()
+            self.bid_sat_order()
+        self.setup_swap()
+        self.create_swap()
+        self.execute_swap()
+
 
 if __name__ == "__main__":
 
     def main():
         global BLOCKSAT
-        parser = argparse.ArgumentParser(description='Perform a submarine swap for a blockstream '
-                                                     'blocksat invoice or optionally-provided'
-                                                     'invoice')
+        parser = argparse.ArgumentParser(
+                description=
+                'Perform a submarine swap for payment of a blockstream blocksat with either '
+                'random data message, a specified message or simple swap against any BOLT11 '
+                'invoice')
         parser.add_argument("--invoice",
                             help="Optional BOLT11 payment request to supply for testing. "
                                  "Can't be used with --message", type=str)
@@ -223,15 +237,9 @@ if __name__ == "__main__":
             BLOCKSAT = 0
         elif args.message:
             order = Order(message=args.message)
-            order.setup_sat_order()
-            order.bid_order()
         else:
             order = Order(message=create_random_message())
-            order.setup_sat_order()
-            order.bid_order()
-        order.setup_swap()
-        order.create_swap()
-        order.execute_swap()
 
+        order.execute_order()
 
     main()
