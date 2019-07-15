@@ -1,8 +1,8 @@
 import logging
 from uuid import uuid1
 
-FORMAT = "[%(asctime)s - %(levelname)8s - %(funcName)20s() ] - %(message)s"
-logging.basicConfig(level=logging.DEBUG, format=FORMAT)
+# FORMAT = "[%(asctime)s - %(levelname)8s - %(funcName)20s() ] - %(message)s"
+# logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 
 
 class Order:
