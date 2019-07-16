@@ -9,6 +9,6 @@ from sub_ln.create_random_message import create_random_message
 from sub_ln.api import *
 
 
-fileConfig('logging.conf')
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+# fileConfig('logging.conf')
+# logging.getLogger(__name__).addHandler(logging.NullHandler())
 
