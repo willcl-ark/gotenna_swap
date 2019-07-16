@@ -1,14 +1,15 @@
 import logging
 from uuid import uuid1
 
-# FORMAT = "[%(asctime)s - %(levelname)8s - %(funcName)20s() ] - %(message)s"
-# logging.basicConfig(level=logging.DEBUG, format=FORMAT)
-
 
 class Order:
 
-    def __init__(self, message="", network='testnet', start_bid_rate=50, max_bid_rate=100,
+    def __init__(self, message="",
+                 network='testnet',
+                 start_bid_rate=50,
+                 max_bid_rate=100,
                  invoice=None):
+
         self.uuid = uuid1()
         self.message = message
         self.network = network
