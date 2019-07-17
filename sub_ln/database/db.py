@@ -1,8 +1,11 @@
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, ForeignKey
-from sub_ln import create_random_message
-import uuid
+from sqlalchemy.exc import IntegrityError
+from uuid import uuid4
 
-engine = create_engine('sqlite:///database.db')
+from sub_ln.utilities import create_random_message
+
+
+engine = create_engine('sqlite:///sub_ln/database/database.db')
 metadata = MetaData()
 
 orders = Table('orders', metadata,
@@ -14,7 +17,7 @@ orders = Table('orders', metadata,
                )
 
 blocksat = Table('blocksat', metadata,
-                 Column('uuid', String(32), ForeignKey('orders.uuid'), primary_key=True),
+                 Column('uuid', String(32), ForeignKey(orders.c.uuid), primary_key=True),
                  Column('satellite_url', String),
                  Column('blocksat_uuid', String),
                  Column('auth_token', String),
@@ -48,29 +51,71 @@ swaps = Table('swaps', metadata,
               Column('payment_secret', String),
               )
 
+
 # This will check for the presence of each table first before creating, so it’s safe to call
 # multiple times
-metadata.create_all(engine)
+def init_db():
+    metadata.create_all(engine)
 
 
-def add_order(uuid, message):
+def add_order(uuid, message, network):
     conn = engine.connect()
     ins = orders.insert()
-    conn.execute(ins, uuid=uuid, message=message)
+    try:
+        conn.execute(ins, uuid=uuid, message=message, network=network)
+    except IntegrityError as e:
+        raise e
 
 
-def add_blocksat(uuid, description):
-    conn=engine.connect()
+def add_blocksat(uuid, satellite_url, result):
+    conn = engine.connect()
     ins = blocksat.insert()
-    conn.execute(ins, uuid=uuid, description=description)
+    try:
+        conn.execute(ins, uuid=uuid,
+                     satellite_url=satellite_url,
+                     blocksat_uuid=result['uuid'],
+                     auth_token=result['auth_token'],
+                     created_at=result['lightning_invoice']['created_at'],
+                     description=result['lightning_invoice']['description'],
+                     expires_at=result['lightning_invoice']['expires_at'],
+                     id=result['lightning_invoice']['id'],
+                     sha256_message_digest=result['lightning_invoice']['metadata']['sha256_message_digest'],
+                     msatoshi=result['lightning_invoice']['msatoshi'],
+                     payreq=result['lightning_invoice']['payreq'],
+                     rhash=result['lightning_invoice']['rhash'],
+                     status=result['lightning_invoice']['status'])
+    except IntegrityError as e:
+        raise e
 
 
-id = str(uuid.uuid4())
-msg = create_random_message()
-description = msg
+def add_refund_addr(uuid, refund_addr):
+    conn = engine.connect()
+    up = orders.update().where(orders.c.uuid == uuid).values(refund_address=refund_addr)
+    try:
+        conn.execute(up)
+    except IntegrityError as e:
+        raise e
 
-add_order(uuid=id, message=msg)
-add_blocksat(uuid=id, description=description)
+
+def add_swap(uuid, result):
+    conn = engine.connect()
+    ins = swaps.insert()
+    # add uuid to the result
+    result['uuid'] = uuid
+    try:
+        # now we can pass result as a dict() as it matches table exactly
+        conn.execute(ins, result)
+    except IntegrityError as e:
+        raise e
 
 
+def add_txid(uuid, txid):
+    conn = engine.connect()
+    up = orders.update().where(orders.c.uuid == uuid).values(txid=txid)
+    try:
+        conn.execute(up)
+    except IntegrityError as e:
+        raise e
+
+# TODO: add check_swap result (preimage)
 

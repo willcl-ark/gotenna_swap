@@ -1,27 +1,21 @@
+import logging
+from flask import abort, jsonify
+from flask_restful import Resource, reqparse
+from uuid import uuid4
+
 from blocksat_api import blocksat
-from flask import Flask, abort, jsonify
-from flask_restful import Api, Resource, reqparse
 from submarine_api import submarine
 
-from sub_ln import *
+from sub_ln.utilities import create_random_message
+from sub_ln.bitcoin import AuthServiceProxy
+from sub_ln.database import db
+from sub_ln.server.server_config import RPC_USER, RPC_PASSWORD, RPC_HOST, RPC_PORT
 
-BLOCKSAT = 1
-NETWORK = "testnet"
-SATOSHIS = 100_000_000
-RPC_HOST = "127.0.0.1"
-RPC_PORT = "18332"
-RPC_USER = "user"
-RPC_PASSWORD = "password"
-
-logger = logging.getLogger('API')
-FORMAT = "[%(asctime)s - %(levelname)8s - %(funcName)20s() ] - %(message)s"
+logger = logging.getLogger(__name__)
+FORMAT = "[%(asctime)s - %(levelname)8s - %(name)8s - %(funcName)8s() ] - %(message)s"
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 
 bitcoin_rpc = AuthServiceProxy(f"http://{RPC_USER}:{RPC_PASSWORD}@{RPC_HOST}:{RPC_PORT}")
-
-app = Flask(__name__)
-app.config["DEBUG"] = True
-api = Api(app)
 
 
 class Rand64ByteMsg(Resource):
@@ -50,8 +44,11 @@ class LookupInvoice(Resource):
         if 'network' not in args:
             abort(400, "Please provide a valid network ('testnet' or 'mainnet')")
         result = submarine.get_invoice_details(invoice=args['invoice'],
-                                               network=args['network']).json()
-        return jsonify({'invoice': result})
+                                               network=args['network'])
+        # if result.status_code == 200:
+        return jsonify({'invoice': result.json()})
+        # else:
+        #     return result
 
 
 class CheckRefundAddress(Resource):
@@ -80,19 +77,27 @@ class CreateOrder(Resource):
         self.reqparse.add_argument('message', type=str, location='json')
         self.reqparse.add_argument('bid', type=str, location='json')
         self.reqparse.add_argument('satellite_url', type=str, location='json')
+        self.reqparse.add_argument('network', type=str, location='json')
         super(CreateOrder, self).__init__()
 
     def post(self):
         args = self.reqparse.parse_args(strict=True)
-        # testing if/else
+        # testing if/else, will use a random message if non provided
         if 'message' in args:
             msg = args['message']
         else:
             msg = create_random_message()
-        # should write the order to db and return the uuid
+        # create an order uuid
+        uuid = str(uuid4())
+        # add order to the orders table
+        db.add_order(uuid=uuid, message=msg, network=args['network'])
+        # place the blocksat order
         result = blocksat.place(message=args['message'], bid=args['bid'],
                                 satellite_url=args['satellite_url']).json()
-        return jsonify({'order': result})
+        # add the order to the blocksat table
+        db.add_blocksat(uuid=uuid, satellite_url=args['satellite_url'], result=result)
+        return jsonify({'uuid': uuid,
+                        'order': result})
 
 
 class BumpSatOrder(Resource):
@@ -120,12 +125,16 @@ class GetRefundAddress(Resource):
 
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
+        self.reqparse.add_argument('uuid', type=str, location='json')
         self.reqparse.add_argument('type', type=str, location='json')
         super(GetRefundAddress, self).__init__()
 
     def get(self):
         args = self.reqparse.parse_args(strict=True)
+        # get a new bitcoin address from rpc
         result = bitcoin_rpc.getnewaddress("", args['type'])
+        # add it to the orders table
+        db.add_refund_addr(uuid=args['uuid'], refund_addr=result)
         return jsonify({'address': result})
 
 
@@ -133,16 +142,21 @@ class CreateSwap(Resource):
 
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
+        self.reqparse.add_argument('uuid', type=str, location='json')
         self.reqparse.add_argument('invoice', type=str, location='json')
         self.reqparse.add_argument('network', type=str, location='json')
+        # TODO: Select refund address from db here
         self.reqparse.add_argument('refund_address', type=str, location='json')
         super(CreateSwap, self).__init__()
 
     def post(self):
         args = self.reqparse.parse_args(strict=True)
+        # create the swap with the swap server
         result = submarine.create(network=args['network'],
                                   invoice=args['invoice'],
                                   refund=args['refund_address']).json()
+        # add the swap to the swap table
+        db.add_swap(uuid=args['uuid'], result=result)
         return jsonify({'swap': result})
 
 
@@ -150,14 +164,17 @@ class ExecuteSwap(Resource):
 
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
+        self.reqparse.add_argument('uuid', type=str, location='json')
         self.reqparse.add_argument('swap_amount_bitcoin', type=str, location='json')
         self.reqparse.add_argument('swap_p2sh_address', type=str, location='json')
         super(ExecuteSwap, self).__init__()
 
     def post(self):
         args = self.reqparse.parse_args(strict=True)
+        # TODO: here we can query the db for address and amount
         on_chain_receipt = bitcoin_rpc.sendtoaddress(args['swap_p2sh_address'],
                                                      args['swap_amount_bitcoin'])
+        db.add_txid(uuid=args['uuid'], txid=on_chain_receipt)
         return jsonify({'txid': on_chain_receipt})
 
 
@@ -165,6 +182,7 @@ class CheckSwap(Resource):
 
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
+        self.reqparse.add_argument('uuid', type=str, location='json')
         self.reqparse.add_argument('network', type=str, location='json')
         self.reqparse.add_argument('invoice', type=str, location='json')
         self.reqparse.add_argument('redeem_script', type=str, location='json')
@@ -176,16 +194,3 @@ class CheckSwap(Resource):
                                         invoice=args['invoice'],
                                         redeem_script=args['redeem_script']).json()
         return jsonify({'swap_check': result})
-
-
-api.add_resource(Rand64ByteMsg, '/api/v1/util/random_message')
-api.add_resource(LookupInvoice, '/api/v1/swap/lookup_invoice')
-api.add_resource(CheckRefundAddress, '/api/v1/swap/check_refund_address')
-api.add_resource(CreateOrder, '/api/v1/blocksat/create_order')
-api.add_resource(BumpSatOrder, '/api/v1/blocksat/bump_order')
-api.add_resource(GetRefundAddress, '/api/v1/bitcoin/get_new_address')
-api.add_resource(CreateSwap, '/api/v1/swap/create_swap')
-api.add_resource(ExecuteSwap, '/api/v1/swap/execute_swap')
-api.add_resource(CheckSwap, '/api/v1/swap/check_swap')
-
-app.run()

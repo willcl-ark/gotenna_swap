@@ -1,0 +1,6 @@
+NETWORK = "testnet"
+SATOSHIS = 100_000_000
+RPC_HOST = "127.0.0.1"
+RPC_PORT = "18332"
+RPC_USER = "user"
+RPC_PASSWORD = "password"
