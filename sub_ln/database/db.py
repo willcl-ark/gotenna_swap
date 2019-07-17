@@ -117,5 +117,12 @@ def add_txid(uuid, txid):
     except IntegrityError as e:
         raise e
 
-# TODO: add check_swap result (preimage)
+
+def check_swap(uuid, preimage):
+    conn = engine.connect()
+    up = swaps.update().where(swaps.c.uuid == uuid).values(preimage=preimage)
+    try:
+        conn.execute(up)
+    except IntegrityError as e:
+        raise e
 
