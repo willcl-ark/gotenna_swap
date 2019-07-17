@@ -1,15 +1,15 @@
 import logging
-from flask import abort, jsonify
-from flask_restful import Resource, reqparse
 from uuid import uuid4
 
 from blocksat_api import blocksat
+from flask import abort, jsonify
+from flask_restful import Resource, reqparse
 from submarine_api import submarine
 
-from sub_ln.utilities import create_random_message
 from sub_ln.bitcoin import AuthServiceProxy
 from sub_ln.database import db
-from sub_ln.server.server_config import RPC_USER, RPC_PASSWORD, RPC_HOST, RPC_PORT
+from sub_ln.server.server_config import RPC_HOST, RPC_PASSWORD, RPC_PORT, RPC_USER
+from sub_ln.utilities import create_random_message
 
 logger = logging.getLogger(__name__)
 FORMAT = "[%(asctime)s - %(levelname)8s - %(name)8s - %(funcName)8s() ] - %(message)s"
@@ -172,10 +172,10 @@ class ExecuteSwap(Resource):
     def post(self):
         args = self.reqparse.parse_args(strict=True)
         # TODO: here we can query the db for address and amount
-        on_chain_receipt = bitcoin_rpc.sendtoaddress(args['swap_p2sh_address'],
-                                                     args['swap_amount_bitcoin'])
-        db.add_txid(uuid=args['uuid'], txid=on_chain_receipt)
-        return jsonify({'txid': on_chain_receipt})
+        txid = bitcoin_rpc.sendtoaddress(args['swap_p2sh_address'],
+                                         args['swap_amount_bitcoin'])
+        db.add_txid(uuid=args['uuid'], txid=txid)
+        return jsonify({'txid': txid})
 
 
 class CheckSwap(Resource):
@@ -193,4 +193,6 @@ class CheckSwap(Resource):
         result = submarine.check_status(network=args['network'],
                                         invoice=args['invoice'],
                                         redeem_script=args['redeem_script']).json()
+        # if 'preimage' in result['swap_check']:
+        #     db.check_swap(uuid=args['uuid'], preimage=result['swap_check']['preimage'])
         return jsonify({'swap_check': result})
