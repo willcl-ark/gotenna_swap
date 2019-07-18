@@ -29,13 +29,13 @@ class Rand64ByteMsg(Resource):
         return jsonify({'message': result})
 
 
-class LookupInvoice(Resource):
+class SwapLookupInvoice(Resource):
 
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
         self.reqparse.add_argument('invoice', type=str, location='json')
         self.reqparse.add_argument('network', type=str, location='json')
-        super(LookupInvoice, self).__init__()
+        super(SwapLookupInvoice, self).__init__()
 
     def get(self):
         args = self.reqparse.parse_args(strict=True)
@@ -51,13 +51,13 @@ class LookupInvoice(Resource):
         #     return result
 
 
-class CheckRefundAddress(Resource):
+class SwapCheckRefundAddress(Resource):
 
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
         self.reqparse.add_argument('address', type=str, location='json')
         self.reqparse.add_argument('network', type=str, location='json')
-        super(CheckRefundAddress, self).__init__()
+        super(SwapCheckRefundAddress, self).__init__()
 
     def get(self):
         args = self.reqparse.parse_args(strict=True)
@@ -100,7 +100,7 @@ class CreateOrder(Resource):
                         'order': result})
 
 
-class BumpSatOrder(Resource):
+class BlocksatBump(Resource):
 
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
@@ -108,7 +108,7 @@ class BumpSatOrder(Resource):
         self.reqparse.add_argument('auth_token', type=str, location='json')
         self.reqparse.add_argument('bid_increase', type=str, location='json')
         self.reqparse.add_argument('satellite_url', type=str, location='json')
-        super(BumpSatOrder, self).__init__()
+        super(BlocksatBump, self).__init__()
 
     def post(self):
         args = self.reqparse.parse_args(strict=True)
@@ -138,7 +138,7 @@ class GetRefundAddress(Resource):
         return jsonify({'address': result})
 
 
-class CreateSwap(Resource):
+class SwapQuote(Resource):
 
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
@@ -147,27 +147,27 @@ class CreateSwap(Resource):
         self.reqparse.add_argument('network', type=str, location='json')
         # TODO: Select refund address from db here
         self.reqparse.add_argument('refund_address', type=str, location='json')
-        super(CreateSwap, self).__init__()
+        super(SwapQuote, self).__init__()
 
     def post(self):
         args = self.reqparse.parse_args(strict=True)
         # create the swap with the swap server
-        result = submarine.create(network=args['network'],
-                                  invoice=args['invoice'],
-                                  refund=args['refund_address']).json()
+        result = submarine.get_quote(network=args['network'],
+                                     invoice=args['invoice'],
+                                     refund=args['refund_address']).json()
         # add the swap to the swap table
         db.add_swap(uuid=args['uuid'], result=result)
         return jsonify({'swap': result})
 
 
-class ExecuteSwap(Resource):
+class SwapPay(Resource):
 
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
         self.reqparse.add_argument('uuid', type=str, location='json')
         self.reqparse.add_argument('swap_amount_bitcoin', type=str, location='json')
         self.reqparse.add_argument('swap_p2sh_address', type=str, location='json')
-        super(ExecuteSwap, self).__init__()
+        super(SwapPay, self).__init__()
 
     def post(self):
         args = self.reqparse.parse_args(strict=True)
@@ -178,7 +178,7 @@ class ExecuteSwap(Resource):
         return jsonify({'txid': txid})
 
 
-class CheckSwap(Resource):
+class SwapCheck(Resource):
 
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
@@ -186,7 +186,7 @@ class CheckSwap(Resource):
         self.reqparse.add_argument('network', type=str, location='json')
         self.reqparse.add_argument('invoice', type=str, location='json')
         self.reqparse.add_argument('redeem_script', type=str, location='json')
-        super(CheckSwap, self).__init__()
+        super(SwapCheck, self).__init__()
 
     def get(self):
         args = self.reqparse.parse_args(strict=True)
