@@ -1,11 +1,9 @@
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, ForeignKey
 from sqlalchemy.exc import IntegrityError
-from uuid import uuid4
 
-from sub_ln.utilities import create_random_message
+from sub_ln.server.server_config import DB_PATH
 
-
-engine = create_engine('sqlite:///sub_ln/database/database.db')
+engine = create_engine(f'sqlite:///{DB_PATH}')
 metadata = MetaData()
 
 orders = Table('orders', metadata,
@@ -54,7 +52,7 @@ swaps = Table('swaps', metadata,
 
 # This will check for the presence of each table first before creating, so it’s safe to call
 # multiple times
-def init_db():
+def init():
     metadata.create_all(engine)
 
 
