@@ -1,1 +1,1 @@
-from sub_ln.bitcoin.authproxy import AuthServiceProxy
+from sub_ln.bitcoin.authproxy import AuthServiceProxy, JSONRPCException
