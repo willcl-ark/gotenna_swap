@@ -6,11 +6,12 @@ verify_ssl = true
 [dev-packages]
 
 [packages]
-lnd-grpc = "==0.3.3"
-blocksat-api = {editable = true,git = "git://github.com/willcl-ark/blockstream_blocksat.git"}
-submarine-api = {editable = true,git = "git://github.com/willcl-ark/submarine_swaps.git"}
 requests = "*"
-python-bitcoinrpc = "*"
+flask = "*"
+blocksat-api = {git = "git://github.com/willcl-ark/blockstream_blocksat.git",ref = "master"}
+submarine-api = {git = "git://github.com/willcl-ark/submarine_swaps.git",ref = "master"}
+flask-restful = "*"
+sqlalchemy = "*"
 
 [requires]
 python_version = "3.7"
