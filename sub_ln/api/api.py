@@ -2,7 +2,7 @@ import logging
 from uuid import uuid4
 
 from blocksat_api import blocksat
-from flask import abort, jsonify, make_response
+from flask import jsonify, make_response
 from flask_restful import Resource, reqparse
 from submarine_api import submarine
 
@@ -17,9 +17,10 @@ logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 
 bitcoin_rpc = AuthServiceProxy(f"http://{RPC_USER}:{RPC_PASSWORD}@{RPC_HOST}:{RPC_PORT}")
 
+SAT_PER_BTC = 100_000_000
+
 
 class Rand64ByteMsg(Resource):
-
     """
     Returns a 64 byte random message for testing.
     """
@@ -34,7 +35,6 @@ class Rand64ByteMsg(Resource):
 
 
 class SwapLookupInvoice(Resource):
-
     """
     Looks up the Invoice related to the swap using the swap server (which in turn queries LND).
 
@@ -62,7 +62,6 @@ class SwapLookupInvoice(Resource):
 
 
 class SwapCheckRefundAddress(Resource):
-
     """
     Checks that the refund address provided is correct for the currency and network so that failed
     swaps can be refunded in a non-custodial fashion.
@@ -85,7 +84,6 @@ class SwapCheckRefundAddress(Resource):
 
 
 class CreateOrder(Resource):
-
     """
     Create the initial order in the DB.
 
@@ -120,7 +118,6 @@ class CreateOrder(Resource):
 
 
 class BlocksatBump(Resource):
-
     """
     Bump the fee associated with an existing blocksat order.
     """
@@ -128,17 +125,18 @@ class BlocksatBump(Resource):
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
         self.reqparse.add_argument('uuid', type=str, location='json')
-        self.reqparse.add_argument('auth_token', type=str, location='json')
         self.reqparse.add_argument('bid_increase', type=str, location='json')
-        self.reqparse.add_argument('satellite_url', type=str, location='json')
         super(BlocksatBump, self).__init__()
 
     def post(self):
         args = self.reqparse.parse_args(strict=True)
-        result = blocksat.bump_order(uuid=args['uuid'],
-                                     auth_token=args['auth_token'],
+        # lookup the order from blocksat table
+        blocksat_uuid, auth_token, satellite_url = db.lookup_bump(uuid=args['uuid'])
+        # bump the order using the details
+        result = blocksat.bump_order(uuid=blocksat_uuid,
+                                     auth_token=auth_token,
                                      bid_increase=args['bid_increase'],
-                                     satellite_url=args['satellite_url'])
+                                     satellite_url=satellite_url)
         if result.status_code == 200:
             result = result.json()
             # TODO: update the database here
@@ -148,9 +146,8 @@ class BlocksatBump(Resource):
 
 
 class GetRefundAddress(Resource):
-
     """
-    Get a refund address of type 'type' from bitcoind connection
+    Get a refund address of type 'type' from bitcoind connection and associate it with the order
     Recommended to use type='legacy' for maximum compatibility
     """
 
@@ -173,7 +170,6 @@ class GetRefundAddress(Resource):
 
 
 class SwapQuote(Resource):
-
     """
     Create and return the swap quote from the swap server
     """
@@ -189,9 +185,11 @@ class SwapQuote(Resource):
 
     def post(self):
         args = self.reqparse.parse_args(strict=True)
+        # search the refund addr from the db
+        refund_address = db.lookup_refund_addr(args['uuid'])[0]
         result = submarine.get_quote(network=args['network'],
                                      invoice=args['invoice'],
-                                     refund=args['refund_address'])
+                                     refund=refund_address)
         if result.status_code == 200:
             result = result.json()
             db.add_swap(uuid=args['uuid'], result=result)
@@ -201,7 +199,6 @@ class SwapQuote(Resource):
 
 
 class SwapPay(Resource):
-
     """
     Pay the on-chain part of the swap
     """
@@ -209,16 +206,15 @@ class SwapPay(Resource):
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
         self.reqparse.add_argument('uuid', type=str, location='json')
-        self.reqparse.add_argument('swap_amount_bitcoin', type=str, location='json')
-        self.reqparse.add_argument('swap_p2sh_address', type=str, location='json')
         super(SwapPay, self).__init__()
 
     def post(self):
         args = self.reqparse.parse_args(strict=True)
-        # TODO: here we can query the db for address and amount
+        swap_amount, swap_p2sh_address = db.lookup_pay_details(args['uuid'])
+        swap_amount_bitcoin = swap_amount / SAT_PER_BTC
+        logger.debug(f"swap_amount_bitcoin: {swap_amount_bitcoin}")
         try:
-            txid = bitcoin_rpc.sendtoaddress(args['swap_p2sh_address'],
-                                         args['swap_amount_bitcoin'])
+            txid = bitcoin_rpc.sendtoaddress(swap_p2sh_address, swap_amount_bitcoin)
             db.add_txid(uuid=args['uuid'], txid=txid)
             return jsonify({'txid': txid})
         except JSONRPCException as e:
@@ -226,7 +222,6 @@ class SwapPay(Resource):
 
 
 class SwapCheck(Resource):
-
     """
     Check the swap. This will also check the funding status of swaps, prompting the server to pay an
     invoice for a newly-funded swap, although this also happens periodically automatically.
@@ -235,16 +230,15 @@ class SwapCheck(Resource):
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
         self.reqparse.add_argument('uuid', type=str, location='json')
-        self.reqparse.add_argument('network', type=str, location='json')
-        self.reqparse.add_argument('invoice', type=str, location='json')
-        self.reqparse.add_argument('redeem_script', type=str, location='json')
         super(SwapCheck, self).__init__()
 
     def get(self):
         args = self.reqparse.parse_args(strict=True)
-        result = submarine.check_status(network=args['network'],
-                                        invoice=args['invoice'],
-                                        redeem_script=args['redeem_script'])
+        # lookup swap details here
+        network, invoice, redeem_script = db.lookup_swap_details(args['uuid'])
+        result = submarine.check_status(network=network,
+                                        invoice=invoice,
+                                        redeem_script=redeem_script)
         if result.status_code == 200:
             result = result.json()
             return jsonify({'swap_check': result})
