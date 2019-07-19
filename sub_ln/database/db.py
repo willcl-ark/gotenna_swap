@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, ForeignKey
+from sqlalchemy.sql import select, or_
 from sqlalchemy.exc import IntegrityError
 
 from sub_ln.server.server_config import DB_PATH
@@ -124,3 +125,31 @@ def check_swap(uuid, preimage):
     except IntegrityError as e:
         raise e
 
+
+def lookup_bump(uuid):
+    conn = engine.connect()
+    s = select([blocksat.c.blocksat_uuid, blocksat.c.auth_token, blocksat.c.satellite_url]).where(
+        blocksat.c.uuid == uuid)
+    return conn.execute(s).fetchone().values()
+
+
+def lookup_refund_addr(uuid):
+    conn = engine.connect()
+    s = select([orders.c.refund_address]).where(orders.c.uuid == uuid)
+    return conn.execute(s).fetchone().values()
+
+
+def lookup_pay_details(uuid):
+    conn = engine.connect()
+    s = select([swaps.c.swap_amount, swaps.c.swap_p2sh_address]).where(swaps.c.uuid == uuid)
+    return conn.execute(s).fetchone().values()
+
+
+def lookup_swap_details(uuid):
+    conn = engine.connect()
+    s = select([orders.c.network, swaps.c.invoice, swaps.c.redeem_script]). \
+        where(
+            or_(swaps.c.uuid == uuid,
+                orders.c.uuid == uuid)
+    )
+    return conn.execute(s).fetchone().values()
