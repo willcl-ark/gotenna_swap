@@ -36,20 +36,18 @@ if blocksat_order.status_code == 200:
 else:
     logger.debug(f"Failed to setup blocksat order")
 
-# set our order uuid to one returned by API (not blocksat_uuid though!)
+# set our order uuid to one returned by API (not blocksat_order.blocksat_uuid though!)
 uuid = blocksat_order['uuid']
 
 # # bump the order fee
 # bid_increase = 5000
-# bump_json = {'uuid': blocksat_order['order']['uuid'],
-#              'auth_token': blocksat_order['order']['auth_token'],
-#              'bid_increase': bid_increase,
-#              'satellite_url': TESTNET_SATELLITE_API}
-# blocksat_order_bump = s.post(URL + '/blocksat/bump_order', json=bump_json).json()
+# bump_json = {'uuid': uuid,
+#              'bid_increase': bid_increase}
+# blocksat_order_bump = s.post(URL + 'blocksat/bump', json=bump_json).json()
 # if 'payreq' in blocksat_order_bump['order']['lightning_invoice']:
 #     logger.debug(f"Sucessfully bumped the fee of the blocksat order by {bid_increase}")
 
-time.sleep(2)
+time.sleep(5)
 # lookup the returned invoice
 invoice_params = {'invoice': blocksat_order['order']['lightning_invoice']['payreq'],
                   'network': 'testnet'}
@@ -87,19 +85,14 @@ else:
 time.sleep(10)
 # pay on-chain swap payment
 swap_amt_bitcoin = create_swap['swap']['swap_amount'] / 100_000_000
-pay_swap_params = {'uuid': uuid,
-                   'swap_amount_bitcoin': swap_amt_bitcoin,
-                   'swap_p2sh_address': create_swap['swap']['swap_p2sh_address']}
+pay_swap_params = {'uuid': uuid}
 pay_swap = s.post(URL + 'swap/pay', json=pay_swap_params).json()
 if 'txid' in pay_swap:
     logger.debug(f"Sucessfully executed on-chain payment for swap, txid: {pay_swap['txid']}")
 
 time.sleep(20)
 # check the swap status
-swap_status_params = {'uuid': uuid,
-                      'network': 'testnet',
-                      'invoice': blocksat_order['order']['lightning_invoice']['payreq'],
-                      'redeem_script': create_swap['swap']['redeem_script']}
+swap_status_params = {'uuid': uuid}
 
 swap_status = s.get(URL + 'swap/check', json=swap_status_params).json()
 tries = 0
@@ -121,3 +114,6 @@ while tries < 10:
 
 if not complete:
     logger.debug(f"Failed to recieved preimage for payment, swap not complete")
+
+
+# TODO: should check the blockstream order status here
