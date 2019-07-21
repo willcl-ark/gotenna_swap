@@ -9,7 +9,7 @@ setuptools.setup(
     author="Will Clark",
     author_email="will8clark@gmail.com",
     description="upload a message to Blockstream Blocksat, paying lightning invoice using a"
-                " submarine swap",
+    " submarine swap",
     # long_description=long_description,
     # long_description_content_type="text/markdown",
     url="https://github.com/willcl-ark/go-sat-sub",
@@ -21,5 +21,5 @@ setuptools.setup(
     ],
     keywords="gotenna submarine blockstream satellite swap",
     install_requires=[],
-    python_requires='>=3.7',
+    python_requires=">=3.7",
 )
