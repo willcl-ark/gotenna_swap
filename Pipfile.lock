@@ -25,7 +25,7 @@
         },
         "blocksat-api": {
             "git": "git://github.com/willcl-ark/blockstream_blocksat.git",
-            "ref": "bd688d999cd8783fe88c9288fcee1ad729d82b47"
+            "ref": "23c4427c5ccbf618b6fb1bc41c0f59d20f8ec9ee"
         },
         "certifi": {
             "hashes": [
@@ -149,7 +149,7 @@
         },
         "submarine-api": {
             "git": "git://github.com/willcl-ark/submarine_swaps.git",
-            "ref": "2bba224e1ee122188edfda1767f5b586e193ff9e"
+            "ref": "b989210440dbc7e210754466902ce5d859b04353"
         },
         "urllib3": {
             "hashes": [

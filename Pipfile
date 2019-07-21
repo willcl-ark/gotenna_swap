@@ -8,10 +8,10 @@ verify_ssl = true
 [packages]
 requests = "*"
 flask = "*"
-blocksat-api = {git = "git://github.com/willcl-ark/blockstream_blocksat.git",ref = "master"}
-submarine-api = {git = "git://github.com/willcl-ark/submarine_swaps.git",ref = "master"}
 flask-restful = "*"
 sqlalchemy = "*"
+blocksat-api = {git = "git://github.com/willcl-ark/blockstream_blocksat.git",ref = "master"}
+submarine-api = {git = "git://github.com/willcl-ark/submarine_swaps.git",ref = "master"}
 
 [requires]
 python_version = "3.7"
