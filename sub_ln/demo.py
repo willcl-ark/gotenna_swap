@@ -11,6 +11,7 @@ A run-through of an API workflow
 
 
 URL = "http://127.0.0.1:5000/api/v1/"
+SATOSHIS = 100_000_000
 
 logger = logging.getLogger(__name__)
 FORMAT = (
@@ -50,7 +51,7 @@ uuid = blocksat_order["uuid"]
 #              'bid_increase': bid_increase}
 # blocksat_order_bump = s.post(URL + 'blocksat/bump', json=bump_json).json()
 # if 'payreq' in blocksat_order_bump['order']['lightning_invoice']:
-#     logger.debug(f"Sucessfully bumped the fee of the blocksat order by {bid_increase}")
+#     logger.debug(f"Successfully bumped the fee of the blocksat order by {bid_increase}")
 
 time.sleep(5)
 # lookup the returned invoice
@@ -94,12 +95,12 @@ else:
 
 time.sleep(10)
 # pay on-chain swap payment
-swap_amt_bitcoin = create_swap["swap"]["swap_amount"] / 100_000_000
+swap_amt_bitcoin = create_swap["swap"]["swap_amount"] / SATOSHIS
 pay_swap_params = {"uuid": uuid}
 pay_swap = s.post(URL + "swap/pay", json=pay_swap_params).json()
 if "txid" in pay_swap:
     logger.debug(
-        f"Sucessfully executed on-chain payment for swap, txid: {pay_swap['txid']}"
+        f"Successfully executed on-chain payment for swap, txid: {pay_swap['txid']}"
     )
 
 time.sleep(20)
@@ -127,7 +128,8 @@ while tries < 10:
         break
 
 if not complete:
-    logger.debug(f"Failed to recieved preimage for payment, swap not complete")
+    logger.debug(f"Failed to received preimage for payment, swap not complete")
 
 
 # TODO: should check the blockstream order status here
+#   to make super sure it's been accepted
