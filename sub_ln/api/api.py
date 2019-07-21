@@ -1,4 +1,5 @@
 import logging
+from json.decoder import JSONDecodeError
 from uuid import uuid4
 
 from blocksat_api import blocksat
@@ -55,10 +56,11 @@ class SwapLookupInvoice(Resource):
         args = self.reqparse.parse_args(strict=True)
         result = submarine.get_invoice_details(invoice=args['invoice'],
                                                network=args['network'])
-        if result.status_code == 200:
+        try:
             return make_response(jsonify({'invoice': result.json()}), 200)
-        else:
-            return result
+        except Exception as e:
+            raise jsonify({'exception': e,
+                           'result': result})
 
 
 class SwapCheckRefundAddress(Resource):
@@ -77,10 +79,11 @@ class SwapCheckRefundAddress(Resource):
         args = self.reqparse.parse_args(strict=True)
         result = submarine.get_address_details(address=args['address'],
                                                network=args['network'])
-        if result.status_code == 200:
+        try:
             return make_response(jsonify({'address': result.json()}), 200)
-        else:
-            return result
+        except Exception as e:
+            raise jsonify({'exception': e,
+                           'result': result})
 
 
 class CreateOrder(Resource):
@@ -109,12 +112,13 @@ class CreateOrder(Resource):
         db.add_order(uuid=uuid, message=msg, network=args['network'])
         result = blocksat.place(message=args['message'], bid=args['bid'],
                                 satellite_url=args['satellite_url'])
-        if result.status_code == 200:
+        try:
             result = result.json()
             db.add_blocksat(uuid=uuid, satellite_url=args['satellite_url'], result=result)
             return make_response(jsonify({'uuid': uuid, 'order': result}), 200)
-        else:
-            return result
+        except Exception as e:
+            raise jsonify({'exception': e,
+                           'result': result})
 
 
 class BlocksatBump(Resource):
@@ -137,12 +141,13 @@ class BlocksatBump(Resource):
                                      auth_token=auth_token,
                                      bid_increase=args['bid_increase'],
                                      satellite_url=satellite_url)
-        if result.status_code == 200:
+        try:
             result = result.json()
             # TODO: update the database here
             return make_response(jsonify({'order': result}), 200)
-        else:
-            return result
+        except Exception as e:
+            raise jsonify({'exception': e,
+                           'result': result})
 
 
 class GetRefundAddress(Resource):
@@ -166,7 +171,7 @@ class GetRefundAddress(Resource):
             db.add_refund_addr(uuid=args['uuid'], refund_addr=result)
             return make_response(jsonify({'address': result}), 200)
         except JSONRPCException as e:
-            raise e
+            raise jsonify({'exception': e})
 
 
 class SwapQuote(Resource):
@@ -190,12 +195,13 @@ class SwapQuote(Resource):
         result = submarine.get_quote(network=args['network'],
                                      invoice=args['invoice'],
                                      refund=refund_address)
-        if result.status_code == 200:
+        try:
             result = result.json()
             db.add_swap(uuid=args['uuid'], result=result)
             return make_response(jsonify({'swap': result}), 200)
-        else:
-            return result
+        except Exception as e:
+            raise jsonify({'exception': e,
+                           'result': result})
 
 
 class SwapPay(Resource):
@@ -218,7 +224,7 @@ class SwapPay(Resource):
             db.add_txid(uuid=args['uuid'], txid=txid)
             return jsonify({'txid': txid})
         except JSONRPCException as e:
-            raise e
+            raise jsonify({'exception': e})
 
 
 class SwapCheck(Resource):
@@ -239,8 +245,8 @@ class SwapCheck(Resource):
         result = submarine.check_status(network=network,
                                         invoice=invoice,
                                         redeem_script=redeem_script)
-        if result.status_code == 200:
-            result = result.json()
-            return jsonify({'swap_check': result})
-        else:
-            return result
+        try:
+            return jsonify({'swap_check': result.json()})
+        except Exception as e:
+            raise jsonify({'exception': e,
+                           'result': result})
