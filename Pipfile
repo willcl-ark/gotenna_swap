@@ -14,4 +14,4 @@ blocksat-api = {git = "git://github.com/willcl-ark/blockstream_blocksat.git",ref
 submarine-api = {git = "git://github.com/willcl-ark/submarine_swaps.git",ref = "master"}
 
 [requires]
-python_version = "3.7"
+python_version = "3.6"

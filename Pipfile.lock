@@ -1,11 +1,11 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "2c0a7c688f4a9cebd4ee73db0359f9859e472eb6fa8ecaaf29b8c95305895b07"
+            "sha256": "ef0c4daebd2f88c11244a46ff13dfb2019ef4828cea063214241d70e9e362f1c"
         },
         "pipfile-spec": 6,
         "requires": {
-            "python_version": "3.7"
+            "python_version": "3.6"
         },
         "sources": [
             {
@@ -25,7 +25,7 @@
         },
         "blocksat-api": {
             "git": "git://github.com/willcl-ark/blockstream_blocksat.git",
-            "ref": "23c4427c5ccbf618b6fb1bc41c0f59d20f8ec9ee"
+            "ref": "7a2df089bca42e30be30d4c40062447d3dfd27df"
         },
         "certifi": {
             "hashes": [
@@ -142,14 +142,14 @@
         },
         "sqlalchemy": {
             "hashes": [
-                "sha256:c30925d60af95443458ebd7525daf791f55762b106049ae71e18f8dd58084c2f"
+                "sha256:217e7fc52199a05851eee9b6a0883190743c4fb9c8ac4313ccfceaffd852b0ff"
             ],
             "index": "pypi",
-            "version": "==1.3.5"
+            "version": "==1.3.6"
         },
         "submarine-api": {
             "git": "git://github.com/willcl-ark/submarine_swaps.git",
-            "ref": "b989210440dbc7e210754466902ce5d859b04353"
+            "ref": "a9c6639f93453918a5847ff30cee952c9de53377"
         },
         "urllib3": {
             "hashes": [
