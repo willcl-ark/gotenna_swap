@@ -48,9 +48,11 @@ lnd must be running on testnet and ready to accept rpc connections from swap-ser
 
 ### swaps-service setup
 
-swaps-service should be cloned from source. Change into the cloned directory and install dependencies using `npm install`
+swaps-service should be cloned from [source](https://github.com/submarineswaps/swaps-service). This package requires `npm v6.10.2` and `nodejs v10.16.0` so update those packages if necessary.
 
-Recommendation is to then copy `example_env.env` file from `gotenna_swap/sub_ln/example_env.env` to `swap-service/.env` and modify the values to match your setup. You can output your admin.macaroon and tls.cert as base64 to use in the .env file using bash commands:
+Change into the cloned directory and install dependencies using `npm install`
+
+Recommendation is to then copy `example_env.env` file from `gotenna_swap/sub_ln/example_env.env` to `swap-service/.env` and modify the values to match your setup. You can output your admin.macaroon and tls.cert as base64 with trailing newlines removed to use in the .env file using bash commands:
 
 `base64 -i ~/.lnd/tls.cert | tr -d '\n'`
 
@@ -74,9 +76,11 @@ You can use screen/tmux for the following 3 servers if you prefer:
 
     `node server.js`
 
-1. Start the gotenna_swap API server. Best activated from within the project parent directory (`.../gotenna_swap/`), then requiring command: 
+1. Start the gotenna_swap API server. Best activated from within the project sub directory: (`.../gotenna_swap/sub_ln/`), unless you have modified the database directory in `gotenna_swap/sub_ln/server/server_config.py`.
 
-    `python sub_ln/server/server.py`
+    To run use command: 
+
+    `python server/server.py`
 
 The flask server will now (as default) be running on localhost, port 5000: `http://127.0.0.1:5000`
 
