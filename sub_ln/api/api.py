@@ -13,7 +13,8 @@ from sub_ln.server.server_config import RPC_HOST, RPC_PASSWORD, RPC_PORT, RPC_US
 from sub_ln.utilities import create_random_message
 
 logger = logging.getLogger(__name__)
-FORMAT = "[%(asctime)s - %(levelname)8s - %(name)8s - %(funcName)8s() ] - %(message)s"
+# FORMAT = "[%(asctime)s - %(levelname)8s - %(name)8s - %(funcName)8s() ] - %(message)s"
+FORMAT = "[%(levelname)s] - %(message)s"
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 
 bitcoin_rpc = AuthServiceProxy(
@@ -21,6 +22,19 @@ bitcoin_rpc = AuthServiceProxy(
 )
 
 SAT_PER_BTC = 100_000_000
+
+
+def prepare_response(result, field):
+    try:
+        code = result.status_code
+        if code != 200:
+            field = "error"
+        response = result.json()
+    except ValueError:
+        code = result.status_code
+        response = result.text
+        field = "error"
+    return make_response(jsonify({field: response}), code)
 
 
 class Rand64ByteMsg(Resource):
@@ -59,10 +73,7 @@ class SwapLookupInvoice(Resource):
         result = submarine.get_invoice_details(
             invoice=args["invoice"], network=args["network"]
         )
-        try:
-            return make_response(jsonify({"invoice": result.json()}), 200)
-        except Exception as e:
-            raise jsonify({"exception": e, "result": result})
+        return prepare_response(result, "invoice")
 
 
 class SwapCheckRefundAddress(Resource):
@@ -82,10 +93,7 @@ class SwapCheckRefundAddress(Resource):
         result = submarine.get_address_details(
             address=args["address"], network=args["network"]
         )
-        try:
-            return make_response(jsonify({"address": result.json()}), 200)
-        except Exception as e:
-            raise jsonify({"exception": e, "result": result})
+        return prepare_response(result, "address")
 
 
 class CreateOrder(Resource):
@@ -118,13 +126,22 @@ class CreateOrder(Resource):
             satellite_url=args["satellite_url"],
         )
         try:
-            result = result.json()
             db.add_blocksat(
                 uuid=uuid, satellite_url=args["satellite_url"], result=result
             )
-            return make_response(jsonify({"uuid": uuid, "order": result}), 200)
         except Exception as e:
             raise jsonify({"exception": e, "result": result})
+
+        # create response with two fields, lazy way
+        try:
+            response = result.json()
+            code = 200
+            field = "order"
+        except ValueError:
+            response = result.text
+            code = result.status_code
+            field = "error"
+        return make_response(jsonify({field: response, "uuid": uuid}), code)
 
 
 class BlocksatBump(Resource):
@@ -149,12 +166,7 @@ class BlocksatBump(Resource):
             bid_increase=args["bid_increase"],
             satellite_url=satellite_url,
         )
-        try:
-            result = result.json()
-            # TODO: update the database here
-            return make_response(jsonify({"order": result}), 200)
-        except Exception as e:
-            raise jsonify({"exception": e, "result": result})
+        return prepare_response(result, "order")
 
 
 class GetRefundAddress(Resource):
@@ -172,13 +184,14 @@ class GetRefundAddress(Resource):
     def get(self):
         args = self.reqparse.parse_args(strict=True)
         # get a new bitcoin address from rpc
+        result = bitcoin_rpc.getnewaddress("", args["type"])
+        # add it to the orders table
         try:
-            result = bitcoin_rpc.getnewaddress("", args["type"])
-            # add it to the orders table
             db.add_refund_addr(uuid=args["uuid"], refund_addr=result)
-            return make_response(jsonify({"address": result}), 200)
         except JSONRPCException as e:
-            raise jsonify({"exception": e})
+            result.text = (result, e)
+            result.status_code = 400
+        return prepare_response(result, "address")
 
 
 class SwapQuote(Resource):
@@ -202,12 +215,7 @@ class SwapQuote(Resource):
         result = submarine.get_quote(
             network=args["network"], invoice=args["invoice"], refund=refund_address
         )
-        try:
-            result = result.json()
-            db.add_swap(uuid=args["uuid"], result=result)
-            return make_response(jsonify({"swap": result}), 200)
-        except Exception as e:
-            raise jsonify({"exception": e, "result": result})
+        return prepare_response(result, "swap")
 
 
 class SwapPay(Resource):
@@ -225,12 +233,15 @@ class SwapPay(Resource):
         swap_amount, swap_p2sh_address = db.lookup_pay_details(args["uuid"])
         swap_amount_bitcoin = swap_amount / SAT_PER_BTC
         logger.debug(f"swap_amount_bitcoin: {swap_amount_bitcoin}")
+        txid = bitcoin_rpc.sendtoaddress(swap_p2sh_address, swap_amount_bitcoin)
         try:
-            txid = bitcoin_rpc.sendtoaddress(swap_p2sh_address, swap_amount_bitcoin)
             db.add_txid(uuid=args["uuid"], txid=txid)
-            return jsonify({"txid": txid})
+            txid = make_response(txid, 200)
+            field = "txid"
         except JSONRPCException as e:
-            raise jsonify({"exception": e})
+            txid = make_response(e, 400)
+            field = "error"
+        return prepare_response(txid, field)
 
 
 class SwapCheck(Resource):
@@ -251,7 +262,4 @@ class SwapCheck(Resource):
         result = submarine.check_status(
             network=network, invoice=invoice, redeem_script=redeem_script
         )
-        try:
-            return jsonify({"swap_check": result.json()})
-        except Exception as e:
-            raise jsonify({"exception": e, "result": result})
+        return prepare_response(result, "swap_check")
