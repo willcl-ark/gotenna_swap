@@ -18,9 +18,7 @@ URL = "http://127.0.0.1:5000/api/v1/"
 SATOSHIS = 100_000_000
 
 logger = logging.getLogger(__name__)
-FORMAT = (
-    "[%(levelname)s] - %(message)s"
-)
+FORMAT = "[%(levelname)s] - %(message)s"
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 
 bitcoin_rpc = AuthServiceProxy(
@@ -29,8 +27,7 @@ bitcoin_rpc = AuthServiceProxy(
 
 
 def fmt_result(result):
-    return {"status_code": result.status_code,
-            "Text": result.text}
+    return {"status_code": result.status_code, "Text": result.text}
 
 
 def main():
@@ -101,26 +98,18 @@ def main():
     # wait for completion
     logger.debug(f"Swap status:\n{pformat(fmt_result(swap_status))}")
     tries = 0
-    swap_status_json = {}
+    complete = False
 
-    def try_decode():
-        global swap_status_json
-        try:
-            swap_status_json = swap_status.json()
-        except JSONDecodeError:
-            swap_status_json = {"null": ""}
-
-    try_decode()
-
-    while "payment_secret" not in swap_status_json and tries < 60:
-        time.sleep(10)
+    while not complete and tries < 60:
+        time.sleep(5)
         swap_status = check_status(
             network="testnet",
             invoice=blocksat_order["lightning_invoice"]["payreq"],
             redeem_script=create_swap["redeem_script"],
         )
         logger.debug(f"Swap status:\n{pformat(fmt_result(swap_status))}")
-        try_decode()
+        if "payment_secret" in swap_status.json():
+            complete = True
         tries += 1
 
 
