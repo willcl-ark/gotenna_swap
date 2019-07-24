@@ -13,8 +13,7 @@ from sub_ln.server.server_config import RPC_HOST, RPC_PASSWORD, RPC_PORT, RPC_US
 from sub_ln.utilities import create_random_message
 
 logger = logging.getLogger(__name__)
-# FORMAT = "[%(asctime)s - %(levelname)8s - %(name)8s - %(funcName)8s() ] - %(message)s"
-FORMAT = "[%(levelname)s] - %(message)s"
+FORMAT = "[%(asctime)s - %(levelname)s] - %(message)s"
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 
 bitcoin_rpc = AuthServiceProxy(
@@ -25,16 +24,9 @@ SAT_PER_BTC = 100_000_000
 
 
 def prepare_response(result, field):
-    try:
-        code = result.status_code
-        if code != 200:
-            field = "error"
-        response = result.json()
-    except ValueError:
-        code = result.status_code
-        response = result.text
+    if result.status_code != 200:
         field = "error"
-    return make_response(jsonify({field: response}), code)
+    return make_response({field: result.text}, result.status_code)
 
 
 class Rand64ByteMsg(Resource):
@@ -48,7 +40,7 @@ class Rand64ByteMsg(Resource):
     @staticmethod
     def get():
         result = create_random_message()
-        return make_response(jsonify({"message": result}), 200)
+        return make_response({"message": result}, 200)
 
 
 class SwapLookupInvoice(Resource):
@@ -111,33 +103,43 @@ class CreateOrder(Resource):
         self.reqparse = reqparse.RequestParser()
         self.reqparse.add_argument("message", type=str, location="json")
         self.reqparse.add_argument("bid", type=str, location="json")
-        self.reqparse.add_argument("satellite_url", type=str, location="json")
+        # self.reqparse.add_argument("satellite_url", type=str, location="json")
         self.reqparse.add_argument("network", type=str, location="json")
         super(CreateOrder, self).__init__()
 
     def post(self):
+        # process inputs
         args = self.reqparse.parse_args(strict=True)
+        if args["network"].strip().lower() == "testnet":
+            satellite_url = blocksat.TESTNET_SATELLITE_API
+        elif args["network"].strip().lower() == "mainnet":
+            satellite_url = blocksat.SATELLITE_API
+        else:
+            return make_response(
+                {"error": "Please provide a valid network ('testnet' or 'mainnet'"}, 400
+            )
         msg = args["message"]
         uuid = str(uuid4())
+        # add to the "orders" db
         db.add_order(uuid=uuid, message=msg, network=args["network"])
         result = blocksat.place(
-            message=args["message"],
-            bid=args["bid"],
-            satellite_url=args["satellite_url"],
+            message=args["message"], bid=args["bid"], satellite_url=satellite_url
         )
-        try:
-            db.add_blocksat(
-                uuid=uuid, satellite_url=args["satellite_url"], result=result
-            )
-        except Exception as e:
-            raise jsonify({"exception": e, "result": result})
+        # add to the database "blocksat" db if order was successful
+        if result.status_code == 200:
+            try:
+                db.add_blocksat(
+                    uuid=uuid, satellite_url=satellite_url, result=result.json()
+                )
+            except Exception as e:
+                raise jsonify({"exception": e, "result": result})
 
         # create response with two fields, lazy way
         try:
             response = result.json()
             code = 200
             field = "order"
-        except ValueError:
+        except (ValueError, KeyError):
             response = result.text
             code = result.status_code
             field = "error"
@@ -189,9 +191,8 @@ class GetRefundAddress(Resource):
         try:
             db.add_refund_addr(uuid=args["uuid"], refund_addr=result)
         except JSONRPCException as e:
-            result.text = (result, e)
-            result.status_code = 400
-        return prepare_response(result, "address")
+            result = {"text": {"result": result, "error": e}, "status_code": 400}
+        return make_response({"address": result}, 200)
 
 
 class SwapQuote(Resource):
@@ -212,9 +213,11 @@ class SwapQuote(Resource):
         args = self.reqparse.parse_args(strict=True)
         # search the refund addr from the db
         refund_address = db.lookup_refund_addr(args["uuid"])[0]
+        logger.debug({"args": args, "refund_address": refund_address})
         result = submarine.get_quote(
             network=args["network"], invoice=args["invoice"], refund=refund_address
         )
+        logger.debug(result)
         return prepare_response(result, "swap")
 
 
