@@ -2,7 +2,6 @@ import logging
 import requests
 import time
 
-from json.decoder import JSONDecodeError
 from pprint import pformat
 
 from sub_ln.utilities import clock
@@ -20,25 +19,75 @@ FORMAT = "[%(asctime)s - %(levelname)s] - %(message)s"
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 
 
-def main():
+# create the request session
+s = requests.Session()
 
-    # create the request session
-    s = requests.Session()
 
-    # create a random message for testing
+@clock
+def create_message():
     message = s.get(URL + "util/random_message").json()
     logger.debug(f"Created random message:\n{pformat(message)}")
+    return message
 
-    # create the blocksat order
+
+@clock
+def create_blocksat_order(message):
     order_params = {"message": message["message"], "bid": 10000, "network": "testnet"}
     blocksat_order = s.post(URL + "order/create", json=order_params)
     if blocksat_order.status_code == 200:
         blocksat_order = blocksat_order.json()
         logger.debug(
-            f"Created order: {blocksat_order['uuid']} for blocksat order:\n{pformat(blocksat_order['order'])}"
+            f"Created order: {blocksat_order['uuid']} for blocksat order:\n"
+            f"{pformat(blocksat_order['order'])}"
         )
+        return blocksat_order
     else:
         logger.error(f"Failed to setup blocksat order")
+        return 0
+
+
+@clock
+def lookup_invoice(blocksat_order):
+    invoice_params = {
+        "invoice": blocksat_order["order"]["lightning_invoice"]["payreq"],
+        "network": "testnet",
+    }
+    invoice_lookup = s.get(URL + "swap/lookup_invoice", json=invoice_params)
+    if invoice_lookup.status_code == 200:
+        invoice_lookup = invoice_lookup.json()
+        logger.debug(f"Successfully looked up invoice with swap server")
+        return invoice_lookup
+    else:
+        logger.error(
+            f"Failed invoice lookup with swap server\n"
+            f"{pformat({'code': invoice_lookup.status_code, 'text': invoice_lookup.text})}"
+        )
+        return 0
+
+
+@clock
+def get_refund_addr(uuid):
+    refund_params = {"uuid": uuid, "type": "legacy"}
+    refund_address = s.get(URL + "bitcoin/new_address", json=refund_params)
+    if refund_address.status_code == 200:
+        refund_address = refund_address.json()
+        logging.debug(
+            f"Successfully got refund address {refund_address['address']} for the swap"
+        )
+        return refund_address
+    else:
+        logger.error(f"Failed to get a refund address")
+        return 0
+
+
+def main():
+
+    # create a random message for testing
+    message = create_message()
+
+    # create the blocksat order
+    blocksat_order = create_blocksat_order(message)
+    if not blocksat_order:
         return
 
     # set our order uuid to one returned by API (not blocksat_order.blocksat_uuid though!)
@@ -52,34 +101,16 @@ def main():
     # if 'payreq' in blocksat_order_bump['order']['lightning_invoice']:
     #     logger.debug(f"Successfully bumped the fee of the blocksat order by {bid_increase}")
 
-    time.sleep(5)
     # lookup the returned invoice
-    invoice_params = {
-        "invoice": blocksat_order["order"]["lightning_invoice"]["payreq"],
-        "network": "testnet",
-    }
-    invoice_lookup = s.get(URL + "swap/lookup_invoice", json=invoice_params)
-    if invoice_lookup.status_code == 200:
-        invoice_lookup = invoice_lookup.json()
-        logger.debug(f"Successfully looked up invoice with swap server")
-    else:
-        logger.error(f"Failed invoice lookup with swap server\n{pformat({'code': invoice_lookup.status_code, 'text': invoice_lookup.text})}")
+    invoice_lookup = lookup_invoice(blocksat_order)
+    if not invoice_lookup:
         return
 
-    time.sleep(2)
     # Get a refund address for the swap
-    refund_params = {"uuid": uuid, "type": "legacy"}
-    refund_address = s.get(URL + "bitcoin/new_address", json=refund_params)
-    if refund_address.status_code == 200:
-        refund_address = refund_address.json()
-        logging.debug(
-            f"Successfully got refund address {refund_address['address']} for the swap"
-        )
-    else:
-        logger.error(f"Failed to get a refund address")
+    refund_address = get_refund_addr(uuid)
+    if not refund_address:
         return
 
-    time.sleep(2)
     # create the swap with swap server
     create_swap_params = {
         "uuid": uuid,
@@ -90,46 +121,38 @@ def main():
     create_swap = s.post(URL + "swap/quote", json=create_swap_params)
     if create_swap.status_code == 200:
         create_swap = create_swap.json()
-        logging.debug(f"Successfully created the swap request with swap server:\n"
-                      f"{pformat(create_swap)}")
+        logging.debug(
+            f"Successfully created the swap request with swap server:\n"
+            f"{pformat(create_swap)}"
+        )
     else:
         logging.error(f"Failed to setup the swap request with the server")
         return
 
-    time.sleep(10)
     # pay on-chain swap payment
     pay_swap_params = {"uuid": uuid}
     pay_swap = s.post(URL + "swap/pay", json=pay_swap_params)
-    logging.debug(f"pay_swap: {pformat(pay_swap)}")
+    logging.debug(f"pay_swap: {pformat(pay_swap.text)}")
     pay_swap = pay_swap.json()
     if "txid" in pay_swap:
         logger.debug(
             f"Successfully executed on-chain payment for swap, txid: {pay_swap['txid']}"
         )
 
-    time.sleep(20)
+    time.sleep(10)
     # check the swap status
     swap_status_params = {"uuid": uuid}
 
-    swap_status = s.get(URL + "swap/check", json=swap_status_params).json()
     tries = 0
     complete = False
 
-    while tries < 10:
-        try:
-            swap_status = s.get(URL + "swap/check_swap", json=swap_status_params).json()
-        except JSONDecodeError as e:
-            print("Ouch")
-            logger.debug(e)
-            pass
-        tries += 1
-        time.sleep(10)
+    while not complete and tries < 60:
+        time.sleep(5)
+        swap_status = s.get(URL + "swap/check", json=swap_status_params).json()
+        logger.debug(f"Swap status:\n{pformat(swap_status)}")
         if "payment_secret" in swap_status["swap_check"]:
-            logger.debug(
-                f"Payment complete! Preimage: {swap_status['swap_check']['payment_secret']}"
-            )
             complete = True
-            break
+        tries += 1
 
     if not complete:
         logger.error(f"Failed to received preimage for payment, swap not complete")
