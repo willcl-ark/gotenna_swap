@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 # TODO: remove
 import logging
+
 logger = logging.getLogger(__name__)
 FORMAT = "[%(asctime)s - %(levelname)s] - %(message)s"
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
@@ -181,4 +182,4 @@ def lookup_swap_details(uuid):
     )
     result = conn.execute(s).fetchone()
     logger.debug(result)
-    # return conn.execute(s).fetchone().values()
+    return conn.execute(s).fetchone().values()
