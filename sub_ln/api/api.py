@@ -216,7 +216,9 @@ class SwapQuote(Resource):
         logger.debug({"args": args, "refund_address": refund_address})
         result = submarine.get_quote(
             network=args["network"], invoice=args["invoice"], refund=refund_address
-        )
+        ).json()
+        # add the swap to the swap table
+        db.add_swap(uuid=args['uuid'], result=result)
         logger.debug(result)
         return prepare_response(result, "swap")
 
