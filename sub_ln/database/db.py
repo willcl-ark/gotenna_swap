@@ -10,6 +10,13 @@ from sqlalchemy import (
 from sqlalchemy.sql import select, or_
 from sqlalchemy.exc import IntegrityError
 
+# TODO: remove
+import logging
+logger = logging.getLogger(__name__)
+FORMAT = "[%(asctime)s - %(levelname)s] - %(message)s"
+logging.basicConfig(level=logging.DEBUG, format=FORMAT)
+
+
 from sub_ln.server.server_config import DB_PATH
 
 engine = create_engine(f"sqlite:///{DB_PATH}")
@@ -172,4 +179,6 @@ def lookup_swap_details(uuid):
     s = select([orders.c.network, swaps.c.invoice, swaps.c.redeem_script]).where(
         or_(swaps.c.uuid == uuid, orders.c.uuid == uuid)
     )
-    return conn.execute(s).fetchone().values()
+    result = conn.execute(s).fetchone()
+    logger.debug(result)
+    # return conn.execute(s).fetchone().values()
