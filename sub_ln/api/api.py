@@ -26,7 +26,7 @@ SAT_PER_BTC = 100_000_000
 def prepare_response(result, field):
     if result.status_code != 200:
         field = "error"
-    return make_response({field: result.text}, result.status_code)
+    return make_response(jsonify({field: result.text}), result.status_code)
 
 
 class Rand64ByteMsg(Resource):
@@ -216,10 +216,10 @@ class SwapQuote(Resource):
         logger.debug({"args": args, "refund_address": refund_address})
         result = submarine.get_quote(
             network=args["network"], invoice=args["invoice"], refund=refund_address
-        ).json()
+        )
         # add the swap to the swap table
-        db.add_swap(uuid=args['uuid'], result=result)
-        logger.debug(result)
+        db.add_swap(uuid=args["uuid"], result=result.json())
+        logger.debug(result.json())
         return prepare_response(result, "swap")
 
 
@@ -241,12 +241,13 @@ class SwapPay(Resource):
         txid = bitcoin_rpc.sendtoaddress(swap_p2sh_address, swap_amount_bitcoin)
         try:
             db.add_txid(uuid=args["uuid"], txid=txid)
-            txid = make_response(txid, 200)
+            response = make_response(jsonify({"txid": txid}), 200)
             field = "txid"
         except JSONRPCException as e:
-            txid = make_response(e, 400)
+            response = make_response(jsonify({"error": e}), 400)
             field = "error"
-        return prepare_response(txid, field)
+        logger.debug({"response": response, "field": field})
+        return response
 
 
 class SwapCheck(Resource):
