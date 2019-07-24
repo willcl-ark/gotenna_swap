@@ -80,6 +80,60 @@ def get_refund_addr(uuid):
         return 0
 
 
+@clock
+def create_swap_func(uuid, blocksat_order, refund_address):
+    create_swap_params = {
+        "uuid": uuid,
+        "invoice": blocksat_order["order"]["lightning_invoice"]["payreq"],
+        "network": "testnet",
+        "refund_address": refund_address["address"],
+    }
+    _create_swap = s.post(URL + "swap/quote", json=create_swap_params)
+    if _create_swap.status_code == 200:
+        _create_swap = _create_swap.json()
+        logging.debug(
+            f"Successfully created the swap request with swap server:\n"
+            f"{pformat(_create_swap)}"
+        )
+        return _create_swap
+    else:
+        logging.error(f"Failed to setup the swap request with the server")
+        return 0
+
+
+@clock
+def pay_swap_func(uuid):
+    pay_swap_params = {"uuid": uuid}
+    pay_swap = s.post(URL + "swap/pay", json=pay_swap_params)
+    logging.debug(f"pay_swap: {pformat(pay_swap.text)}")
+    pay_swap = pay_swap.json()
+    if "txid" in pay_swap:
+        logger.debug(
+            f"Successfully executed on-chain payment for swap, txid: {pay_swap['txid']}"
+        )
+        return pay_swap
+    return 0
+
+
+@clock
+def check_swp_status(uuid):
+    swap_status_params = {"uuid": uuid}
+
+    tries = 0
+    complete = False
+
+    while not complete and tries < 60:
+        time.sleep(5)
+        swap_status = s.get(URL + "swap/check", json=swap_status_params).json()
+        logger.debug(f"Swap status:\n{pformat(swap_status)}")
+        if "payment_secret" in swap_status["swap_check"]:
+            complete = True
+        tries += 1
+
+    if not complete:
+        logger.error(f"Failed to received preimage for payment, swap not complete")
+
+
 def main():
 
     # create a random message for testing
@@ -112,50 +166,18 @@ def main():
         return
 
     # create the swap with swap server
-    create_swap_params = {
-        "uuid": uuid,
-        "invoice": blocksat_order["order"]["lightning_invoice"]["payreq"],
-        "network": "testnet",
-        "refund_address": refund_address["address"],
-    }
-    create_swap = s.post(URL + "swap/quote", json=create_swap_params)
-    if create_swap.status_code == 200:
-        create_swap = create_swap.json()
-        logging.debug(
-            f"Successfully created the swap request with swap server:\n"
-            f"{pformat(create_swap)}"
-        )
-    else:
-        logging.error(f"Failed to setup the swap request with the server")
+    # TODO: Fix so that only requires uuid
+    create_swap = create_swap_func(uuid, blocksat_order, refund_address)
+    if not create_swap:
         return
 
     # pay on-chain swap payment
-    pay_swap_params = {"uuid": uuid}
-    pay_swap = s.post(URL + "swap/pay", json=pay_swap_params)
-    logging.debug(f"pay_swap: {pformat(pay_swap.text)}")
-    pay_swap = pay_swap.json()
-    if "txid" in pay_swap:
-        logger.debug(
-            f"Successfully executed on-chain payment for swap, txid: {pay_swap['txid']}"
-        )
+    pay_swap = pay_swap_func(uuid)
+    if not pay_swap:
+        return
 
-    time.sleep(10)
     # check the swap status
-    swap_status_params = {"uuid": uuid}
-
-    tries = 0
-    complete = False
-
-    while not complete and tries < 60:
-        time.sleep(5)
-        swap_status = s.get(URL + "swap/check", json=swap_status_params).json()
-        logger.debug(f"Swap status:\n{pformat(swap_status)}")
-        if "payment_secret" in swap_status["swap_check"]:
-            complete = True
-        tries += 1
-
-    if not complete:
-        logger.error(f"Failed to received preimage for payment, swap not complete")
+    check_swp_status(uuid)
 
     # TODO: should check the blockstream order status here
     #   to make super sure it's been accepted
